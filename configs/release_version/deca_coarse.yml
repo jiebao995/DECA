@@ -7,13 +7,19 @@
 # around 15min/1000iterations
 # in total, needs around 
 # output_dir: "/ps/scratch/yfeng/Data/Projects-data/DECA-training/training/DECA_release_version/coarse"
-output_dir: "/home/jie/Documents/NextFace_custom/ext/deca/outputs/coarse_vggface2"
+output_dir: "/home/jie/Documents/NextFace_custom/ext/deca/outputs/coarse_vggface2_test"
 # pretrained_modelpath: "/ps/scratch/yfeng/Data/Projects-data/DECA-training/training/DECA_release_version/pretrain/model.tar"
-pretrained_modelpath: "/home/jie/Documents/NextFace_custom/ext/deca/outputs/pretrain_vggface2/model.tar"
+pretrained_modelpath: "/home/jie/Documents/NextFace_custom/ext/deca/outputs/pretrain_vggface2_clean/model.tar"
 dataset:
   batch_size: 8
   K: 2
   eval_data: []
+  max_iterations_per_epoch: -1
+  use_vggface2_clean_list: True
+loss:
+  useSeg: True
+  useSegface: True
+  segfaceModelPath: "/home/jie/Documents/NextFace_custom/ext/segface/weights/model_299.pt"
 train:
   resume: True
   result_dir_name: "coarse_results"

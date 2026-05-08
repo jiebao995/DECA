@@ -10,21 +10,29 @@ from glob import glob
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 
 class VGGFace2Dataset(Dataset):
-    def __init__(self, K, image_size, scale, trans_scale = 0, isTemporal=False, isEval=False, isSingle=False):
+    def __init__(self, K, image_size, scale, trans_scale = 0, isTemporal=False, isEval=False, isSingle=False, datafile=None):
         '''
         K must be less than 6
         '''
         self.K = K
         self.image_size = image_size
         self.imagefolder = '/ps/scratch/face2d3d/train'
+        self.imagefolder = '/home/jie/Downloads/vggface2_train/train'
+        
         self.kptfolder = '/ps/scratch/face2d3d/train_annotated_torch7'
+        self.kptfolder = '/home/jie/Downloads/vggface2_train/train_annotated_fan'
+
         self.segfolder = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_seg/test_crop_size_400_batch'
         # hq:
         # datafile = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_cleaning_codes/ringnetpp_training_lists/second_cleaning/vggface2_bbx_size_bigger_than_400_train_list_max_normal_100_ring_5_1_serial.npy'
-        datafile = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_cleaning_codes/ringnetpp_training_lists/second_cleaning/vggface2_train_list_max_normal_100_ring_5_1_serial.npy'
+        if datafile is None:
+            datafile = '/home/jie/Downloads/vggface2_train/vggface2_train_fan_clean_list_5.npy'
         if isEval:
             datafile = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_cleaning_codes/ringnetpp_training_lists/second_cleaning/vggface2_val_list_max_normal_100_ring_5_1_serial.npy'
+        self.datafile = datafile
         self.data_lines = np.load(datafile).astype('str')
+        if self.data_lines.ndim == 1:
+            self.data_lines = self.data_lines[:, None]
 
         self.isTemporal = isTemporal
         self.scale = scale #[scale_min, scale_max]
@@ -32,6 +40,13 @@ class VGGFace2Dataset(Dataset):
         self.isSingle = isSingle
         if isSingle:
             self.K = 1
+        if self.K > self.data_lines.shape[1]:
+            raise ValueError(
+                'VGGFace2Dataset K={} requires at least {} images per row, '
+                'but {} has shape {}. Use K=1 for a flat clean list.'.format(
+                    self.K, self.K, self.datafile, self.data_lines.shape
+                )
+            )
 
     def __len__(self):
         return len(self.data_lines)
@@ -39,7 +54,7 @@ class VGGFace2Dataset(Dataset):
     def __getitem__(self, idx):
         images_list = []; kpt_list = []; mask_list = []
 
-        random_ind = np.random.permutation(5)[:self.K]
+        random_ind = np.random.permutation(self.data_lines.shape[1])[:self.K]
         for i in random_ind:
             name = self.data_lines[idx, i]
             image_path = os.path.join(self.imagefolder, name + '.jpg')  

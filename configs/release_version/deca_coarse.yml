@@ -9,7 +9,7 @@
 # output_dir: "/ps/scratch/yfeng/Data/Projects-data/DECA-training/training/DECA_release_version/coarse"
 output_dir: "/home/jie/Documents/NextFace_custom/ext/deca/outputs/coarse_vggface2_test"
 # pretrained_modelpath: "/ps/scratch/yfeng/Data/Projects-data/DECA-training/training/DECA_release_version/pretrain/model.tar"
-pretrained_modelpath: "/home/jie/Documents/NextFace_custom/ext/deca/outputs/pretrain_vggface2_clean/model.tar"
+pretrained_modelpath: "/home/jie/Documents/NextFace_custom/ext/deca/outputs/pretrain_vggface2_clean_validate_light/model.tar"
 dataset:
   batch_size: 8
   K: 2

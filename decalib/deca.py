@@ -197,8 +197,8 @@ class DECA(nn.Module):
             background = None
 
         if rendering:
-            # ops = self.render(verts, trans_verts, albedo, codedict['light'])
-            ops = self.render(verts, trans_verts, albedo, h=h, w=w, background=background)
+            ops = self.render(verts, trans_verts, albedo, codedict['light'])
+            # ops = self.render(verts, trans_verts, albedo, h=h, w=w, background=background)
             ## output
             opdict['grid'] = ops['grid']
             opdict['rendered_images'] = ops['images']

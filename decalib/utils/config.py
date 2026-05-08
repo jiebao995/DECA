@@ -13,7 +13,7 @@ cfg.deca_dir = abs_deca_dir
 cfg.device = 'cuda'
 cfg.device_id = '0'
 
-cfg.pretrained_modelpath = os.path.join(cfg.deca_dir, 'data', 'deca_model.tar')
+cfg.pretrained_modelpath = os.path.join(cfg.deca_dir, 'data', 'model_trained_coarse.tar')
 cfg.output_dir = ''
 cfg.rasterizer_type = 'pytorch3d'
 # ---------------------------------------------------------------------------- #
@@ -40,6 +40,7 @@ cfg.model.n_cam = 3
 cfg.model.n_pose = 6
 cfg.model.n_light = 27
 cfg.model.use_tex = True
+cfg.model.extract_tex = True
 cfg.model.jaw_type = 'aa' # default use axis angle, another option: euler. Note that: aa is not stable in the beginning
 # face recognition model
 cfg.model.fr_model_path = os.path.join(cfg.deca_dir, 'data', 'resnet50_ft_weight.pkl')
@@ -52,7 +53,8 @@ cfg.model.max_z = 0.01
 # Options for Dataset
 # ---------------------------------------------------------------------------- #
 cfg.dataset = CN()
-cfg.dataset.training_data = ['vggface2', 'ethnicity']
+# cfg.dataset.training_data = ['vggface2', 'ethnicity']
+cfg.dataset.training_data = ['vggface2']
 # cfg.dataset.training_data = ['ethnicity']
 cfg.dataset.eval_data = ['aflw2000']
 cfg.dataset.test_data = ['']
@@ -64,6 +66,10 @@ cfg.dataset.image_size = 224
 cfg.dataset.scale_min = 1.4
 cfg.dataset.scale_max = 1.8
 cfg.dataset.trans_scale = 0.
+cfg.dataset.max_iterations_per_epoch = -1
+cfg.dataset.use_vggface2_clean_list = False
+cfg.dataset.vggface2_datafile = '/home/jie/Downloads/vggface2_train/vggface2_train_fan_clean_list_5.npy'
+cfg.dataset.vggface2_clean_datafile = '/home/jie/Downloads/vggface2_train/vggface2_train_fan_stability_clean_list_5.npy'
 
 # ---------------------------------------------------------------------------- #
 # Options for training
@@ -74,6 +80,7 @@ cfg.train.max_epochs = 500
 cfg.train.max_steps = 1000000
 cfg.train.lr = 1e-4
 cfg.train.log_dir = 'logs'
+cfg.train.result_dir_name = 'results'
 cfg.train.log_steps = 10
 cfg.train.vis_dir = 'train_images'
 cfg.train.vis_steps = 200
@@ -94,8 +101,10 @@ cfg.loss.eyed = 1.0
 cfg.loss.lipd = 0.5
 cfg.loss.photo = 2.0
 cfg.loss.useSeg = True
+cfg.loss.useSegface = False
+cfg.loss.segfaceModelPath = '/home/jie/Documents/NextFace_custom/ext/segface/weights/model_299.pt'
 cfg.loss.id = 0.2
-cfg.loss.id_shape_only = True
+# cfg.loss.id_shape_only = True
 cfg.loss.reg_shape = 1e-04
 cfg.loss.reg_exp = 1e-04
 cfg.loss.reg_tex = 1e-04

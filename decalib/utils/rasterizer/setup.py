@@ -5,10 +5,13 @@
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 import os
+import shutil
 
 # USE_NINJA = os.getenv('USE_NINJA') == '1'
-os.environ["CC"] = "gcc-7"
-os.environ["CXX"] = "gcc-7"
+ccbin = os.environ.get("DECA_CUDA_CC") or shutil.which("gcc-7")
+if ccbin:
+    os.environ["CC"] = ccbin
+    os.environ["CXX"] = ccbin
 
 USE_NINJA = os.getenv('USE_NINJA') == '1'
 
@@ -18,7 +21,8 @@ setup(
 	CUDAExtension('standard_rasterize_cuda', [
         'standard_rasterize_cuda.cpp',
         'standard_rasterize_cuda_kernel.cu',
-        ])
+        ],
+        extra_compile_args={'nvcc': ['-std=c++17']})
 	],
     cmdclass={'build_ext': BuildExtension.with_options(use_ninja=USE_NINJA)}
 )

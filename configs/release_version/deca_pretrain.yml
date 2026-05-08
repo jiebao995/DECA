@@ -10,11 +10,15 @@
 # 
 # 
 # '''
-output_dir: "/ps/scratch/yfeng/Data/Projects-data/DECA-training/training/DECA_release_version/pretrain"
+# output_dir: "/ps/scratch/yfeng/Data/Projects-data/DECA-training/training/DECA_release_version/pretrain"
+output_dir: "/home/jie/Documents/NextFace_custom/ext/deca/outputs/pretrain_vggface2_clean"
 pretrained_modelpath: ''
 dataset:
-  batch_size: 64
+  batch_size: 32
   K: 1
+  eval_data: []
+  max_iterations_per_epoch: -1
+  use_vggface2_clean_list: True  
 loss:
   photo: 0.
   id: 0.
@@ -23,11 +27,12 @@ loss:
   reg_light: 0.
   shape_consistency: False
 train:
-  resume: True
-  max_epochs: 10
+  resume: False
+  result_dir_name: "pretrain_results"
+  max_epochs: 5
   max_steps: 100000
   log_steps: 10
   vis_steps: 500
   checkpoint_steps: 1000
   val_steps: 500
-  eval_steps: 1000
+  eval_steps: 0

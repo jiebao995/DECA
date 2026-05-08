@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset
 import scipy.io
 
 class AFLW2000(Dataset):
-    def __init__(self, testpath='/ps/scratch/yfeng/Data/AFLW2000/GT', crop_size=224):
+    def __init__(self, testpath='/home/jie/Documents/NextFace_custom/ext/deca/TestSamples/AFLW2000', crop_size=224):
         '''
             data class for loading AFLW2000 dataset
             make sure each image has corresponding mat file, which provides cropping infromation

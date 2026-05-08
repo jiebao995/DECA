@@ -14,6 +14,7 @@
 # For commercial licensing contact, please contact ps-license@tuebingen.mpg.de
 
 import os, sys
+import csv
 import torch
 import torchvision
 import torch.nn.functional as F
@@ -66,11 +67,185 @@ class Trainer(object):
             self.face_attr_mask = util.load_local_mask(image_size=self.cfg.model.uv_size, mode='bbx')
         else:
             self.id_loss = lossfunc.VGGFace2Loss(pretrained_model=self.cfg.model.fr_model_path)      
+
+        self.segfaceMaskGenerator = None
+        if self._use_segface_masks():
+            self.segfaceMaskGenerator = self._build_segface_mask_generator()
         
         logger.add(os.path.join(self.cfg.output_dir, self.cfg.train.log_dir, 'train.log'))
+        self.result_dir = os.path.join(self.cfg.output_dir, self.cfg.train.result_dir_name)
+        os.makedirs(self.result_dir, exist_ok=True)
+        self.loss_csv_path = os.path.join(self.result_dir, 'loss_history.csv')
+        self.loss_history = self.load_loss_history()
         if self.cfg.train.write_summary:
             from torch.utils.tensorboard import SummaryWriter
             self.writer = SummaryWriter(log_dir=os.path.join(self.cfg.output_dir, self.cfg.train.log_dir))
+
+    def _use_segface_masks(self):
+        return bool(self.cfg.loss.useSeg and getattr(self.cfg.loss, 'useSegface', False))
+
+    def _build_segface_mask_generator(self):
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
+
+        from tools.segface_mask import SegFaceMaskGenerator
+
+        model_path = getattr(self.cfg.loss, 'segfaceModelPath', '')
+        if not model_path:
+            raise ValueError('cfg.loss.segfaceModelPath must be set when cfg.loss.useSegface is True')
+        logger.info(f'using online SegFace masks from {model_path}')
+        return SegFaceMaskGenerator(model_path, self.device)
+
+    def load_loss_history(self):
+        if not os.path.exists(self.loss_csv_path):
+            return []
+
+        history = []
+        with open(self.loss_csv_path, newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                clean_row = {}
+                for key, value in row.items():
+                    if value == '':
+                        continue
+                    clean_row[key] = int(float(value)) if key == 'step' else float(value)
+                if clean_row.get('step', -1) <= self.global_step:
+                    history.append(clean_row)
+        return history
+
+    def save_loss_plots(self):
+        if not self.loss_history:
+            return
+
+        keys = [key for key in self.loss_history[-1].keys() if key != 'step']
+        all_keys = sorted({key for row in self.loss_history for key in row.keys() if key != 'step'})
+
+        with open(self.loss_csv_path, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['step'] + all_keys)
+            writer.writeheader()
+            writer.writerows(self.loss_history)
+
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+        except Exception as exc:
+            logger.warning(f'using OpenCV fallback for loss plots: {exc}')
+            self.save_loss_plots_cv2(keys)
+            return
+
+        steps = [row['step'] for row in self.loss_history]
+        plt.figure(figsize=(12, 7))
+        for key in keys:
+            values = [row.get(key, np.nan) for row in self.loss_history]
+            plt.plot(steps, values, label=key)
+        plt.xlabel('global step')
+        plt.ylabel('loss')
+        plt.title('Training losses')
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.result_dir, 'losses_over_time.png'), dpi=150)
+        plt.close()
+
+        loss_plot_dir = os.path.join(self.result_dir, 'losses')
+        os.makedirs(loss_plot_dir, exist_ok=True)
+        for key in keys:
+            values = [row.get(key, np.nan) for row in self.loss_history]
+            plt.figure(figsize=(10, 5))
+            plt.plot(steps, values)
+            plt.xlabel('global step')
+            plt.ylabel(key)
+            plt.title(f'{key} over time')
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+            safe_key = ''.join(c if c.isalnum() or c in ('-', '_') else '_' for c in key)
+            plt.savefig(os.path.join(loss_plot_dir, f'{safe_key}.png'), dpi=150)
+            plt.close()
+
+    def save_loss_plots_cv2(self, keys):
+        steps = np.asarray([row['step'] for row in self.loss_history], dtype=np.float32)
+        if steps.size == 0:
+            return
+
+        def safe_name(name):
+            return ''.join(c if c.isalnum() or c in ('-', '_') else '_' for c in name)
+
+        def draw_plot(plot_keys, ylabel, path):
+            width, height = 1100, 650
+            left, right, top, bottom = 80, 30, 50, 75
+            canvas = np.full((height, width, 3), 255, dtype=np.uint8)
+            x0, x1 = left, width - right
+            y0, y1 = height - bottom, top
+            cv2.rectangle(canvas, (x0, y1), (x1, y0), (210, 210, 210), 1)
+
+            x_min = float(np.min(steps))
+            x_max = float(np.max(steps))
+            if x_max == x_min:
+                x_max = x_min + 1.0
+
+            all_values = []
+            for key in plot_keys:
+                values = np.asarray([row.get(key, np.nan) for row in self.loss_history], dtype=np.float32)
+                values = values[np.isfinite(values)]
+                if values.size:
+                    all_values.append(values)
+            if not all_values:
+                return
+
+            all_values = np.concatenate(all_values)
+            y_min = float(np.min(all_values))
+            y_max = float(np.max(all_values))
+            if y_max == y_min:
+                y_max = y_min + 1.0
+            y_pad = (y_max - y_min) * 0.08
+            y_min -= y_pad
+            y_max += y_pad
+
+            colors = [
+                (31, 119, 180), (255, 127, 14), (44, 160, 44),
+                (214, 39, 40), (148, 103, 189), (140, 86, 75),
+                (227, 119, 194), (127, 127, 127), (188, 189, 34),
+                (23, 190, 207),
+            ]
+
+            for index, key in enumerate(plot_keys):
+                values = np.asarray([row.get(key, np.nan) for row in self.loss_history], dtype=np.float32)
+                valid = np.isfinite(values)
+                if np.count_nonzero(valid) < 1:
+                    continue
+                xs = x0 + (steps[valid] - x_min) / (x_max - x_min) * (x1 - x0)
+                ys = y0 - (values[valid] - y_min) / (y_max - y_min) * (y0 - y1)
+                points = np.stack([xs, ys], axis=1).astype(np.int32)
+                color = colors[index % len(colors)]
+                if len(points) == 1:
+                    cv2.circle(canvas, tuple(points[0]), 3, color, -1)
+                else:
+                    cv2.polylines(canvas, [points], False, color, 2)
+                cv2.putText(canvas, key, (x0 + 10, y1 + 25 + index * 22),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
+
+            cv2.putText(canvas, 'global step', (width // 2 - 60, height - 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 50, 50), 1, cv2.LINE_AA)
+            cv2.putText(canvas, ylabel, (20, 35),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 50, 50), 1, cv2.LINE_AA)
+            cv2.putText(canvas, f'{x_min:.0f}', (x0 - 10, y0 + 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (80, 80, 80), 1, cv2.LINE_AA)
+            cv2.putText(canvas, f'{x_max:.0f}', (x1 - 55, y0 + 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (80, 80, 80), 1, cv2.LINE_AA)
+            cv2.putText(canvas, f'{y_min:.4f}', (5, y0),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (80, 80, 80), 1, cv2.LINE_AA)
+            cv2.putText(canvas, f'{y_max:.4f}', (5, y1 + 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (80, 80, 80), 1, cv2.LINE_AA)
+            cv2.imwrite(path, canvas)
+
+        draw_plot(keys, 'loss', os.path.join(self.result_dir, 'losses_over_time.png'))
+
+        loss_plot_dir = os.path.join(self.result_dir, 'losses')
+        os.makedirs(loss_plot_dir, exist_ok=True)
+        for key in keys:
+            draw_plot([key], key, os.path.join(loss_plot_dir, f'{safe_name(key)}.png'))
     
     def configure_optimizers(self):
         if self.train_detail:
@@ -88,7 +263,7 @@ class Trainer(object):
         model_dict = self.deca.model_dict()
         # resume training, including model weight, opt, steps
         # import ipdb; ipdb.set_trace()
-        if self.cfg.train.resume and os.path.exists(os.path.join(self.cfg.output_dir, 'model.tar')):
+        if self.cfg.train.resume and os.path.isfile(os.path.join(self.cfg.output_dir, 'model.tar')):
             checkpoint = torch.load(os.path.join(self.cfg.output_dir, 'model.tar'))
             for key in model_dict.keys():
                 if key in checkpoint.keys():
@@ -115,6 +290,9 @@ class Trainer(object):
         images = batch['image'].to(self.device); images = images.view(-1, images.shape[-3], images.shape[-2], images.shape[-1]) 
         lmk = batch['landmark'].to(self.device); lmk = lmk.view(-1, lmk.shape[-2], lmk.shape[-1])
         masks = batch['mask'].to(self.device); masks = masks.view(-1, images.shape[-2], images.shape[-1]) 
+        if self.segfaceMaskGenerator is not None:
+            images_bhwc = images.permute(0, 2, 3, 1).contiguous()
+            masks = self.segfaceMaskGenerator.predict(images_bhwc)[..., 0]
 
         #-- encoder
         codedict = self.deca.encode(images, use_detail=self.train_detail)
@@ -185,6 +363,7 @@ class Trainer(object):
                 else:
                     masks = mask_face_eye*opdict['alpha_images']
                 losses['photometric_texture'] = (masks*(predicted_images - images).abs()).mean()*self.cfg.loss.photo
+                opdict['photometric_masks'] = masks.detach()
 
             if self.cfg.loss.id > 0.:
                 shading_images = self.deca.render.add_SHlight(opdict['normal_images'], codedict['light'].detach())
@@ -233,6 +412,7 @@ class Trainer(object):
             predicted_images = ops['images']*mask_face_eye*ops['alpha_images']
 
             masks = masks[:,None,:,:]
+            photometric_masks = masks.detach()
 
             uv_z = self.deca.D_detail(torch.cat([posecode[:,3:], expcode, detailcode], dim=1))
             # render detail
@@ -282,7 +462,8 @@ class Trainer(object):
                 'predicted_images': predicted_images,
                 'predicted_detail_images': predicted_detail_images,
                 'images': images,
-                'lmk': lmk
+                'lmk': lmk,
+                'photometric_masks': photometric_masks
             }
             
         #########################################################
@@ -368,18 +549,34 @@ class Trainer(object):
                             pin_memory=True,
                             drop_last=True)
         self.train_iter = iter(self.train_dataloader)
-        self.val_dataloader = DataLoader(self.val_dataset, batch_size=8, shuffle=True,
-                            num_workers=8,
-                            pin_memory=True,
-                            drop_last=False)
-        self.val_iter = iter(self.val_dataloader)
+        self.val_dataloader = None
+        self.val_iter = None
+        if self.val_dataset is not None:
+            self.val_dataloader = DataLoader(self.val_dataset, batch_size=8, shuffle=True,
+                                num_workers=8,
+                                pin_memory=True,
+                                drop_last=False)
+            self.val_iter = iter(self.val_dataloader)
 
     def fit(self):
         self.prepare_data()
 
-        iters_every_epoch = int(len(self.train_dataset)/self.batch_size)
+        full_iters_every_epoch = int(len(self.train_dataset)/self.batch_size)
+        max_iterations_per_epoch = int(self.cfg.dataset.max_iterations_per_epoch)
+        if max_iterations_per_epoch < 0:
+            iters_every_epoch = full_iters_every_epoch
+        else:
+            iters_every_epoch = min(max_iterations_per_epoch, full_iters_every_epoch)
+        if iters_every_epoch < 1:
+            raise ValueError(
+                f'iters_every_epoch={iters_every_epoch}. Check dataset size, '
+                f'batch_size={self.batch_size}, and max_iterations_per_epoch={max_iterations_per_epoch}.'
+            )
         start_epoch = self.global_step//iters_every_epoch
         for epoch in range(start_epoch, self.cfg.train.max_epochs):
+            # A new iterator reshuffles the DataLoader each epoch; limiting the
+            # number of steps therefore samples a random subset of data lines.
+            self.train_iter = iter(self.train_dataloader)
             # for step, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch: {epoch}/{self.cfg.train.max_epochs}")):
             for step in tqdm(range(iters_every_epoch), desc=f"Epoch[{epoch+1}/{self.cfg.train.max_epochs}]"):
                 if epoch*iters_every_epoch + step < self.global_step:
@@ -391,6 +588,15 @@ class Trainer(object):
                     batch = next(self.train_iter)
                 losses, opdict = self.training_step(batch, step)
                 if self.global_step % self.cfg.train.log_steps == 0:
+                    loss_values = {'step': self.global_step}
+                    for k, v in losses.items():
+                        if torch.is_tensor(v):
+                            loss_values[k] = float(v.detach().cpu())
+                        else:
+                            loss_values[k] = float(v)
+                    self.loss_history.append(loss_values)
+                    self.save_loss_plots()
+
                     loss_info = f"ExpName: {self.cfg.exp_name} \nEpoch: {epoch}, Iter: {step}/{iters_every_epoch}, Time: {datetime.now().strftime('%Y-%m-%d-%H:%M:%S')} \n"
                     for k, v in losses.items():
                         loss_info = loss_info + f'{k}: {v:.4f}, '
@@ -411,6 +617,15 @@ class Trainer(object):
                         visdict['predicted_images'] = opdict['predicted_images'][visind]
                     if 'predicted_detail_images' in opdict.keys():
                         visdict['predicted_detail_images'] = opdict['predicted_detail_images'][visind]
+                    if 'photometric_masks' in opdict.keys():
+                        mask_alpha = 0.25
+                        mask_vis = opdict['photometric_masks'][visind].clamp(0, 1)
+                        reference_images = opdict['images'][visind]
+                        red_overlay = torch.zeros_like(reference_images)
+                        red_overlay[:, 0:1, :, :] = 1.
+                        visdict['photometric_masks'] = (
+                            reference_images*(1. - mask_alpha*mask_vis) + red_overlay*(mask_alpha*mask_vis)
+                        ).clamp(0, 1)
 
                     savepath = os.path.join(self.cfg.output_dir, self.cfg.train.vis_dir, f'{self.global_step:06}.jpg')
                     grid_image = util.visualize_grid(visdict, savepath, return_gird=True)
@@ -428,10 +643,10 @@ class Trainer(object):
                         os.makedirs(os.path.join(self.cfg.output_dir, 'models'), exist_ok=True)
                         torch.save(model_dict, os.path.join(self.cfg.output_dir, 'models', f'{self.global_step:08}.tar'))   
 
-                if self.global_step % self.cfg.train.val_steps == 0:
+                if self.val_dataloader is not None and self.global_step % self.cfg.train.val_steps == 0:
                     self.validation_step()
                 
-                if self.global_step % self.cfg.train.eval_steps == 0:
+                if self.cfg.train.eval_steps > 0 and self.global_step > 0 and self.global_step % self.cfg.train.eval_steps == 0:
                     self.evaluate()
 
                 all_loss = losses['all_loss']

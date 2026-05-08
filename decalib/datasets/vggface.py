@@ -16,12 +16,12 @@ class VGGFace2Dataset(Dataset):
         '''
         self.K = K
         self.image_size = image_size
-        self.imagefolder = '/ps/scratch/face2d3d/train'
-        self.kptfolder = '/ps/scratch/face2d3d/train_annotated_torch7'
+        self.imagefolder = '/home/jie/Downloads/vggface2_train/train'
+        self.kptfolder = '/home/jie/Downloads/vggface2_train/train_annotated_fan'
         self.segfolder = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_seg/test_crop_size_400_batch'
         # hq:
         # datafile = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_cleaning_codes/ringnetpp_training_lists/second_cleaning/vggface2_bbx_size_bigger_than_400_train_list_max_normal_100_ring_5_1_serial.npy'
-        datafile = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_cleaning_codes/ringnetpp_training_lists/second_cleaning/vggface2_train_list_max_normal_100_ring_5_1_serial.npy'
+        datafile = '/home/jie/Downloads/vggface2_train/vggface2_train_fan_clean_list_5.npy'
         if isEval:
             datafile = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_cleaning_codes/ringnetpp_training_lists/second_cleaning/vggface2_val_list_max_normal_100_ring_5_1_serial.npy'
         self.data_lines = np.load(datafile).astype('str')

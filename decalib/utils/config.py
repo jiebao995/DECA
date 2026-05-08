@@ -52,9 +52,9 @@ cfg.model.max_z = 0.01
 # Options for Dataset
 # ---------------------------------------------------------------------------- #
 cfg.dataset = CN()
-cfg.dataset.training_data = ['vggface2', 'ethnicity']
-# cfg.dataset.training_data = ['ethnicity']
-cfg.dataset.eval_data = ['aflw2000']
+# cfg.dataset.training_data = ['vggface2', 'ethnicity']
+cfg.dataset.training_data = ['vggface2']
+cfg.dataset.eval_data = []
 cfg.dataset.test_data = ['']
 cfg.dataset.batch_size = 2
 cfg.dataset.K = 4

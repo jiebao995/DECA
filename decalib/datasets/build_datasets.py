@@ -41,6 +41,8 @@ def build_val(config, is_train=True):
         data_list.append(NoWDataset())
     if 'aflw2000' in config.eval_data:
         data_list.append(AFLW2000())
+    if not data_list:
+        return None
     dataset = ConcatDataset(data_list)
 
     return dataset

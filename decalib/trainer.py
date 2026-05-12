@@ -368,11 +368,19 @@ class Trainer(object):
                             pin_memory=True,
                             drop_last=True)
         self.train_iter = iter(self.train_dataloader)
-        self.val_dataloader = DataLoader(self.val_dataset, batch_size=8, shuffle=True,
-                            num_workers=8,
-                            pin_memory=True,
-                            drop_last=False)
-        self.val_iter = iter(self.val_dataloader)
+        # self.val_dataloader = DataLoader(self.val_dataset, batch_size=8, shuffle=True,
+        #                     num_workers=8,
+        #                     pin_memory=True,
+        #                     drop_last=False)
+        # self.val_iter = iter(self.val_dataloader)
+        self.val_dataloader = None
+        self.val_iter = None
+        if self.val_dataset is not None:
+            self.val_dataloader = DataLoader(self.val_dataset, batch_size=8, shuffle=True,
+                                num_workers=8,
+                                pin_memory=True,
+                                drop_last=False)
+            self.val_iter = iter(self.val_dataloader)
 
     def fit(self):
         self.prepare_data()
@@ -428,10 +436,14 @@ class Trainer(object):
                         os.makedirs(os.path.join(self.cfg.output_dir, 'models'), exist_ok=True)
                         torch.save(model_dict, os.path.join(self.cfg.output_dir, 'models', f'{self.global_step:08}.tar'))   
 
-                if self.global_step % self.cfg.train.val_steps == 0:
+                # if self.global_step % self.cfg.train.val_steps == 0:
+                #     self.validation_step()
+                if self.val_dataloader is not None and self.global_step % self.cfg.train.val_steps == 0:
                     self.validation_step()
                 
-                if self.global_step % self.cfg.train.eval_steps == 0:
+                # if self.global_step % self.cfg.train.eval_steps == 0:
+                #     self.evaluate()
+                if self.cfg.train.eval_steps > 0 and self.global_step > 0 and self.global_step % self.cfg.train.eval_steps == 0:
                     self.evaluate()
 
                 all_loss = losses['all_loss']

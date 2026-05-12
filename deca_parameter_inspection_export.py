@@ -308,11 +308,18 @@ def save_parameter_vector_bars(
     reference_tensor: torch.Tensor,
     optimized_tensor: torch.Tensor,
     sort_by_delta: bool = False,
+    max_vectors: int | None = None,
 ) -> dict[str, float]:
     reference_values = tensor_to_numpy(reference_tensor)
     optimized_values = tensor_to_numpy(optimized_tensor)
     delta = optimized_values - reference_values
     indices = np.arange(len(delta))
+
+    if max_vectors is not None:
+        reference_values = reference_values[:max_vectors]
+        optimized_values = optimized_values[:max_vectors]
+        delta = delta[:max_vectors]
+        indices = indices[:max_vectors]
 
     if sort_by_delta:
         order = np.argsort(-np.abs(delta))
@@ -324,6 +331,7 @@ def save_parameter_vector_bars(
     labels = [f"{name}[{index:03d}]" for index in indices]
     sort_note = " sorted by abs(delta)" if sort_by_delta else ""
     filename_note = "_sorted_by_abs_delta" if sort_by_delta else ""
+    limit_note = f" first {max_vectors}" if max_vectors is not None else ""
 
     fig = plot_mirrored_horizontal_bars(
         labels=labels,
@@ -331,7 +339,7 @@ def save_parameter_vector_bars(
         right_lengths=np.abs(optimized_values),
         left_text=[f"{value:+.3g}" for value in reference_values],
         right_text=[f"{value:+.3g}" for value in optimized_values],
-        title=f"{name}: mirrored coefficient magnitudes{sort_note}",
+        title=f"{name}: mirrored coefficient magnitudes{limit_note}{sort_note}",
         magnitude_label="abs(parameter), mirrored left/right; labels show signed values",
     )
     mirrored_path = output_dir / f"{name.replace(' ', '_')}_mirrored{filename_note}.png"
@@ -486,12 +494,14 @@ def main() -> None:
     vector_summary = {}
     for key in PARAMETER_KEYS:
         plot_name = "light_flattened" if key == "light" else key
+        max_vectors = 40 if key == "shape" else None
         vector_summary[key] = save_parameter_vector_bars(
             plot_dir,
             plot_name,
             reference_codedict[key],
             optimized_codedict[key],
             sort_by_delta=False,
+            max_vectors=max_vectors,
         )
 
     if not args.no_save_parameters:

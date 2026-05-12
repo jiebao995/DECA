@@ -219,6 +219,134 @@ def save_rgb(path: Path, image_rgb: np.ndarray) -> None:
     imsave(path, (np.clip(image_rgb, 0.0, 1.0) * 255).astype(np.uint8))
 
 
+def image_np(tensor: torch.Tensor) -> np.ndarray:
+    image = tensor.detach()[0].float().cpu()
+    if image.ndim == 2:
+        return np.clip(image.numpy(), 0.0, 1.0)
+    if image.shape[0] == 1:
+        image = image.repeat(3, 1, 1)
+    return np.clip(image.permute(1, 2, 0).numpy(), 0.0, 1.0)
+
+
+def image_np_normalized(tensor: torch.Tensor) -> np.ndarray:
+    image = tensor.detach()[0].float().cpu()
+    if image.ndim == 3:
+        image = image.permute(1, 2, 0)
+    image = image.numpy()
+    return (image - image.min()) / (image.max() - image.min() + 1e-8)
+
+
+def mask_np(tensor: torch.Tensor) -> np.ndarray:
+    mask = tensor.detach()[0].float().cpu()
+    if mask.ndim == 3:
+        mask = mask[0]
+    return np.clip(mask.numpy(), 0.0, 1.0)
+
+
+def tensor_stats(name: str, tensor: torch.Tensor) -> dict[str, float | list[int]]:
+    values = tensor.detach().float().cpu()
+    stats = {
+        "shape": list(values.shape),
+        "min": float(values.min()),
+        "max": float(values.max()),
+        "mean": float(values.mean()),
+        "std": float(values.std()),
+    }
+    print(
+        f"{name}: shape={stats['shape']}, min={stats['min']:.6g}, "
+        f"max={stats['max']:.6g}, mean={stats['mean']:.6g}, std={stats['std']:.6g}"
+    )
+    return stats
+
+
+def image_display_diagnostics(name: str, tensor: torch.Tensor) -> dict[str, float | list[int]]:
+    stats = tensor_stats(name, tensor)
+    values = tensor.detach().float().cpu()
+    stats["fraction_below_0"] = float((values < 0.0).float().mean())
+    stats["fraction_above_1"] = float((values > 1.0).float().mean())
+    return stats
+
+
+def clone_codedict(codedict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    return {
+        key: value.detach().clone() if torch.is_tensor(value) else value
+        for key, value in codedict.items()
+    }
+
+
+def decode_neutral_shape(model: DECA, codedict: dict[str, torch.Tensor]):
+    neutral_codedict = clone_codedict(codedict)
+    neutral_codedict["shape"].zero_()
+    with torch.no_grad():
+        return model.decode(
+            neutral_codedict,
+            rendering=True,
+            vis_lmk=False,
+            return_vis=False,
+            use_detail=False,
+        )
+
+
+def render_shape_images(model: DECA, opdict: dict[str, torch.Tensor]) -> torch.Tensor:
+    with torch.no_grad():
+        return model.render.render_shape(
+            opdict["verts"].detach().clone(),
+            opdict["trans_verts"].detach().clone(),
+        )
+
+
+def save_render_comparison_figure(
+    path: Path,
+    image_bchw: torch.Tensor,
+    reference_opdict: dict[str, torch.Tensor],
+    optimized_opdict: dict[str, torch.Tensor],
+    optimized_neutral_shape_opdict: dict[str, torch.Tensor],
+    reference_shape_images: torch.Tensor,
+    optimized_shape_images: torch.Tensor,
+    optimized_neutral_shape_images: torch.Tensor,
+) -> None:
+    fig, axes = plt.subplots(3, 5, figsize=(18, 12))
+
+    axes[0, 0].imshow(image_np(image_bchw))
+    axes[0, 0].set_title("input crop")
+    axes[0, 1].imshow(image_np(reference_opdict["rendered_images"]))
+    axes[0, 1].set_title("real render\nclamped [0,1]")
+    axes[0, 2].imshow(image_np_normalized(reference_opdict["rendered_images"]))
+    axes[0, 2].set_title("real render\nauto-normalized")
+    axes[0, 3].imshow(mask_np(reference_opdict["alpha_images"]), cmap="gray", vmin=0, vmax=1)
+    axes[0, 3].set_title("real alpha")
+    axes[0, 4].imshow(image_np(reference_shape_images))
+    axes[0, 4].set_title("real shape\nclamped [0,1]")
+
+    axes[1, 0].imshow(image_np(image_bchw))
+    axes[1, 0].set_title("same input crop")
+    axes[1, 1].imshow(image_np(optimized_opdict["rendered_images"]))
+    axes[1, 1].set_title("optimized render\nclamped [0,1]")
+    axes[1, 2].imshow(image_np_normalized(optimized_opdict["rendered_images"]))
+    axes[1, 2].set_title("optimized render\nauto-normalized")
+    axes[1, 3].imshow(mask_np(optimized_opdict["alpha_images"]), cmap="gray", vmin=0, vmax=1)
+    axes[1, 3].set_title("optimized alpha")
+    axes[1, 4].imshow(image_np(optimized_shape_images))
+    axes[1, 4].set_title("optimized shape\nclamped [0,1]")
+
+    axes[2, 0].imshow(image_np(image_bchw))
+    axes[2, 0].set_title("same input crop")
+    axes[2, 1].imshow(image_np(optimized_neutral_shape_opdict["rendered_images"]))
+    axes[2, 1].set_title("optimized render\nshape set to 0")
+    axes[2, 2].imshow(image_np_normalized(optimized_neutral_shape_opdict["rendered_images"]))
+    axes[2, 2].set_title("optimized neutral render\nauto-normalized")
+    axes[2, 3].imshow(mask_np(optimized_neutral_shape_opdict["alpha_images"]), cmap="gray", vmin=0, vmax=1)
+    axes[2, 3].set_title("optimized neutral alpha")
+    axes[2, 4].imshow(image_np(optimized_neutral_shape_images))
+    axes[2, 4].set_title("optimized neutral shape\nclamped [0,1]")
+
+    for ax in axes.flat:
+        ax.axis("off")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
 def format_sh_axis(ax, image: np.ndarray, title: str) -> None:
     ax.imshow(image, extent=[-180, 180, -90, 90], origin="upper", aspect="auto")
     ax.set_title(title)
@@ -468,6 +596,40 @@ def main() -> None:
         args.env_width,
     )
 
+    optimized_neutral_shape_opdict = decode_neutral_shape(optimized_model, optimized_codedict)
+    reference_shape_images = render_shape_images(reference_model, reference_opdict)
+    optimized_shape_images = render_shape_images(optimized_model, optimized_opdict)
+    optimized_neutral_shape_images = render_shape_images(optimized_model, optimized_neutral_shape_opdict)
+
+    render_stats = {
+        "real_deca_rendered_images": image_display_diagnostics(
+            "real_deca.rendered_images", reference_opdict["rendered_images"]
+        ),
+        "optimized_model_rendered_images": image_display_diagnostics(
+            "optimized_model.rendered_images", optimized_opdict["rendered_images"]
+        ),
+        "optimized_model_neutral_shape_rendered_images": image_display_diagnostics(
+            "optimized_model.neutral_shape.rendered_images",
+            optimized_neutral_shape_opdict["rendered_images"],
+        ),
+        "real_deca_shape_images": tensor_stats("real_deca.shape_images", reference_shape_images),
+        "optimized_model_shape_images": tensor_stats("optimized_model.shape_images", optimized_shape_images),
+        "optimized_model_neutral_shape_shape_images": tensor_stats(
+            "optimized_model.neutral_shape.shape_images", optimized_neutral_shape_images
+        ),
+    }
+    render_comparison_path = output_dir / "render_comparison.png"
+    save_render_comparison_figure(
+        render_comparison_path,
+        image_bchw,
+        reference_opdict,
+        optimized_opdict,
+        optimized_neutral_shape_opdict,
+        reference_shape_images,
+        optimized_shape_images,
+        optimized_neutral_shape_images,
+    )
+
     env_delta = optimized_env - reference_env
     np.save(env_dir / "real_deca_env_raw.npy", reference_env)
     np.save(env_dir / "optimized_model_env_raw.npy", optimized_env)
@@ -526,10 +688,12 @@ def main() -> None:
             "optimized_minus_real": env_stats(env_delta),
             "optimized_minus_real_abs": env_stats(delta_abs),
         },
+        "render_stats": render_stats,
         "parameter_group_summary": group_summary,
         "parameter_vector_summary": vector_summary,
         "written_files": {
             "input_crop": "input_crop.png",
+            "render_comparison": "render_comparison.png",
             "env_maps_dir": "env_maps",
             "parameter_bars_dir": "parameter_bars",
             "parameters_npz": None if args.no_save_parameters else "parameters.npz",
@@ -541,6 +705,7 @@ def main() -> None:
     print("Wrote diagnostics:")
     print(f"  {env_dir}")
     print(f"  {plot_dir}")
+    print(f"  {render_comparison_path}")
     print(f"  {output_dir / 'metadata.json'}")
 
 

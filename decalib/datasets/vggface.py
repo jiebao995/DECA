@@ -16,17 +16,15 @@ class VGGFace2Dataset(Dataset):
         '''
         self.K = K
         self.image_size = image_size
-        self.imagefolder = '/ps/scratch/face2d3d/train'
-        self.imagefolder = '/home/jie/Downloads/vggface2_train/train'
-        
-        self.kptfolder = '/ps/scratch/face2d3d/train_annotated_torch7'
-        self.kptfolder = '/home/jie/Downloads/vggface2_train/train_annotated_fan'
+        self.imagefolder = '/home/beltegeuse/Downloads/train'
 
-        self.segfolder = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_seg/test_crop_size_400_batch'
+        self.kptfolder = '/home/beltegeuse/Downloads/annotated_landmarks'
+
+        self.segfolder = '/home/beltegeuse/Downloads/train_seg'
         # hq:
         # datafile = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_cleaning_codes/ringnetpp_training_lists/second_cleaning/vggface2_bbx_size_bigger_than_400_train_list_max_normal_100_ring_5_1_serial.npy'
         if datafile is None:
-            datafile = '/home/jie/Downloads/vggface2_train/vggface2_train_fan_clean_list_5.npy'
+            datafile = '/home/beltegeuse/Downloads/vggface2_train_fan_clean_list_5.npy'
         if isEval:
             datafile = '/ps/scratch/face2d3d/texture_in_the_wild_code/VGGFace2_cleaning_codes/ringnetpp_training_lists/second_cleaning/vggface2_val_list_max_normal_100_ring_5_1_serial.npy'
         self.datafile = datafile
@@ -58,7 +56,7 @@ class VGGFace2Dataset(Dataset):
         for i in random_ind:
             name = self.data_lines[idx, i]
             image_path = os.path.join(self.imagefolder, name + '.jpg')  
-            seg_path = os.path.join(self.segfolder, name + '.npy')  
+            seg_path = os.path.join(self.segfolder, name + '.npz')
             kpt_path = os.path.join(self.kptfolder, name + '.npy')
                                             
             image = imread(image_path)/255.
@@ -124,12 +122,12 @@ class VGGFace2Dataset(Dataset):
     def load_mask(self, maskpath, h, w):
         # print(maskpath)
         if os.path.isfile(maskpath):
-            vis_parsing_anno = np.load(maskpath)
-            # atts = ['skin', 'l_brow', 'r_brow', 'l_eye', 'r_eye', 'eye_g', 'l_ear', 'r_ear', 'ear_r',
-            #     'nose', 'mouth', 'u_lip', 'l_lip', 'neck', 'neck_l', 'cloth', 'hair', 'hat']
-            mask = np.zeros_like(vis_parsing_anno)
-            # for i in range(1, 16):
-            mask[vis_parsing_anno>0.5] = 1.
+            # Masks are bit-packed .npz (mask = np.packbits(face), shape = native (H, W));
+            # see tools/gen_segface_masks.py. Unpack to a float {0, 1} array.
+            with np.load(maskpath) as d:
+                mh, mw = (int(v) for v in d['shape'])
+                bits = np.unpackbits(d['mask'])[: mh * mw]
+            mask = bits.reshape(mh, mw).astype(np.float32)
         else:
             mask = np.ones((h, w))
         return mask
@@ -167,7 +165,7 @@ class VGGFace2HQDataset(Dataset):
         for i in range(self.K):
             name = self.data_lines[idx, i]
             image_path = os.path.join(self.imagefolder, name + '.jpg')  
-            seg_path = os.path.join(self.segfolder, name + '.npy')  
+            seg_path = os.path.join(self.segfolder, name + '.npz')
             kpt_path = os.path.join(self.kptfolder, name + '.npy')
                                             
             image = imread(image_path)/255.
@@ -233,12 +231,12 @@ class VGGFace2HQDataset(Dataset):
     def load_mask(self, maskpath, h, w):
         # print(maskpath)
         if os.path.isfile(maskpath):
-            vis_parsing_anno = np.load(maskpath)
-            # atts = ['skin', 'l_brow', 'r_brow', 'l_eye', 'r_eye', 'eye_g', 'l_ear', 'r_ear', 'ear_r',
-            #     'nose', 'mouth', 'u_lip', 'l_lip', 'neck', 'neck_l', 'cloth', 'hair', 'hat']
-            mask = np.zeros_like(vis_parsing_anno)
-            # for i in range(1, 16):
-            mask[vis_parsing_anno>0.5] = 1.
+            # Masks are bit-packed .npz (mask = np.packbits(face), shape = native (H, W));
+            # see tools/gen_segface_masks.py. Unpack to a float {0, 1} array.
+            with np.load(maskpath) as d:
+                mh, mw = (int(v) for v in d['shape'])
+                bits = np.unpackbits(d['mask'])[: mh * mw]
+            mask = bits.reshape(mh, mw).astype(np.float32)
         else:
             mask = np.ones((h, w))
         return mask
